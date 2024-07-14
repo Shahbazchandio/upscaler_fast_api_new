@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-ESRGAN Image Enhancer</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; }
+        #imageComparison { display: flex; justify-content: space-between; margin-top: 20px; }
+        #imageComparison img { max-width: 48%; height: auto; }
+        #loading { display: none; text-align: center; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Real-ESRGAN Image Enhancer</h1>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="imageUpload" name="file" accept="image/png, image/jpeg" required>
+        <select id="scaleFactor" name="scale_factor" required>
+            <option value="2">2x</option>
+            <option value="3">3x</option>
+            <option value="4">4x</option>
+        </select>
+        <button type="submit">Enhance Image</button>
+    </form>
+    <div id="loading">Enhancing image, please wait...</div>
+    <div id="imageComparison">
+        <img id="originalImage" alt="Original Image">
+        <img id="enhancedImage" alt="Enhanced Image">
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('imageComparison').style.display = 'none';
+
+            try {
+                const response = await fetch('/enhance/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                
+                document.getElementById('originalImage').src = `data:image/png;base64,${result.original}`;
+                document.getElementById('enhancedImage').src = `data:image/png;base64,${result.enhanced}`;
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('imageComparison').style.display = 'flex';
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('loading').textContent = 'An error occurred while processing the image.';
+            }
+        });
+    </script>
+</body>
+</html>
