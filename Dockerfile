@@ -49,7 +49,7 @@ COPY main.py .
 COPY templates templates/
 
 # Copy the static directory if you have one (for CSS, JS, etc.)
-COPY static static/
+# COPY static static/
 
 # Copy any other necessary files
 # COPY other_necessary_files .
