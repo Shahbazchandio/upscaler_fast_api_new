@@ -14,8 +14,8 @@ from realesrgan import RealESRGANer
 app = FastAPI()
 
 templates = Jinja2Templates(directory="templates")
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 # Initialize Real-ESRGAN models
 model_4x = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
 model_2x = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
