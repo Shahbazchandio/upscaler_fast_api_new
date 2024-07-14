@@ -1,5 +1,7 @@
 import io
 import base64
+import os  # Add this line
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
