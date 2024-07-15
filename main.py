@@ -16,9 +16,6 @@ from realesrgan import RealESRGANer
 from gfpgan import GFPGANer
 from concurrent.futures import ThreadPoolExecutor
 import cv2
-from transformers import GPTNeoForCausalLM, GPT2Tokenizer
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 # Imports for the chatbot feature
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -65,8 +62,8 @@ def get_models():
     model_path_4x = 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth'
     model_path_2x = 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth'
 
-    upsampler_4x = RealESRGANer(scale=4, model_path=model_path_4x, model=model_4x, tile=256, tile_pad=10, pre_pad=0, half=False)
-    upsampler_2x = RealESRGANer(scale=2, model_path=model_path_2x, model=model_2x, tile=256, tile_pad=10, pre_pad=0, half=False)
+    upsampler_4x = RealESRGANer(scale=4, model_path=model_path_4x, model=model_4x, tile=128, tile_pad=10, pre_pad=0, half=False)
+    upsampler_2x = RealESRGANer(scale=2, model_path=model_path_2x, model=model_2x, tile=128, tile_pad=10, pre_pad=0, half=False)
 
     gfpgan_model_path = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth'
     gfpgan = GFPGANer(model_path=gfpgan_model_path, upscale=2, arch='clean', channel_multiplier=2, bg_upsampler=upsampler_2x)
@@ -212,6 +209,7 @@ async def enhance_image_api(file: UploadFile = File(...), scale_factor: int = Fo
         logger.error(f"Error processing image: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
+# Function for generating chat responses
 def generate_response(prompt, max_length=100):
     tokenizer, model = get_language_model()
     device = next(model.parameters()).device
