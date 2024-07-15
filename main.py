@@ -15,6 +15,16 @@ from basicsr.archs.rrdbnet_arch import RRDBNet
 from realesrgan import RealESRGANer
 from gfpgan import GFPGANer
 from concurrent.futures import ThreadPoolExecutor
+import cv2
+from transformers import GPTNeoForCausalLM, GPT2Tokenizer
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+
+# Imports for the chatbot feature
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# Imports for BLIP image captioning
+from transformers import BlipProcessor, BlipForConditionalGeneration
+import torch
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +39,19 @@ if os.path.exists("static"):
 # Create a ThreadPoolExecutor for background tasks
 executor = ThreadPoolExecutor(max_workers=2)  # Adjust based on your CPU
 
+# Load the language model and tokenizer
+@lru_cache(maxsize=None)
+def get_language_model():
+    model_name = "google/flan-t5-large"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    
+    return tokenizer, model
+
+
 @lru_cache(maxsize=None)
 def get_models():
     model_4x = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
@@ -41,9 +64,19 @@ def get_models():
     upsampler_2x = RealESRGANer(scale=2, model_path=model_path_2x, model=model_2x, tile=256, tile_pad=10, pre_pad=0, half=False)
 
     gfpgan_model_path = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth'
-    gfpgan = GFPGANer(model_path=gfpgan_model_path, upscale=1, arch='clean', channel_multiplier=2, bg_upsampler=None)
+    gfpgan = GFPGANer(model_path=gfpgan_model_path, upscale=2, arch='clean', channel_multiplier=2, bg_upsampler=upsampler_2x)
 
     return upsampler_2x, upsampler_4x, gfpgan
+
+# BLIP Image Captioning model
+@lru_cache(maxsize=None)
+def get_image_captioning_model():
+    processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
+    return processor, model
+
 
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -67,22 +100,51 @@ def process_image(content: bytes):
     image = Image.open(io.BytesIO(content))
     return np.array(image)
 
-def enhance_image(img, scale_factor, mode):
+def enhance_image(img, scale_factor, mode, color_correct=False, sharpen=False):
     upsampler_2x, upsampler_4x, gfpgan = get_models()
+    
+    if color_correct:
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+        l, a, b = cv2.split(img)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+        l = clahe.apply(l)
+        img = cv2.merge((l,a,b))
+        img = cv2.cvtColor(img, cv2.COLOR_LAB2RGB)
     
     if mode == 'upscale':
         if scale_factor == 2:
-            output, _ = upsampler_2x.enhance(img, outscale=2)
+            output, _ = upsampler_2x.enhance(img, outscale=2,  tile=128)
         elif scale_factor == 3:
-            output, _ = upsampler_4x.enhance(img, outscale=3)
+            output, _ = upsampler_4x.enhance(img, outscale=3,  tile=128)
         else:  # scale_factor == 4
-            output, _ = upsampler_4x.enhance(img, outscale=4)
+            output, _ = upsampler_4x.enhance(img, outscale=4,  tile=128)
     elif mode == 'face_enhance':
+        # Apply GFPGAN for face enhancement
         _, _, output = gfpgan.enhance(img, has_aligned=False, only_center_face=False, paste_back=True)
+        
+        # Apply additional upscaling if needed
+        if scale_factor > 2:
+            if scale_factor == 3:
+                output, _ = upsampler_4x.enhance(output, outscale=1.5)
+            else:  # scale_factor == 4
+                output, _ = upsampler_4x.enhance(output, outscale=2)
     else:
         raise ValueError(f"Invalid mode: {mode}")
     
+    if sharpen:
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        output = cv2.filter2D(output, -1, kernel)
+    
     return output
+
+def generate_caption(image):
+    processor, model = get_image_captioning_model()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    inputs = processor(image, return_tensors="pt").to(device)
+    output = model.generate(**inputs, max_new_tokens=20)
+    caption = processor.decode(output[0], skip_special_tokens=True)
+    return caption
 
 async def process_queue_item():
     while True:
@@ -98,7 +160,7 @@ async def process_queue_item():
 
 @app.on_event("startup")
 async def startup_event():
-    app.state.queue = asyncio.Queue(maxsize=10)
+    app.state.queue = asyncio.Queue(maxsize=5)
     app.state.worker = asyncio.create_task(process_queue_item())
 
 @app.on_event("shutdown")
@@ -112,7 +174,7 @@ async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 @app.post("/enhance/")
-async def enhance_image_api(file: UploadFile = File(...), scale_factor: int = Form(...), mode: str = Form(...)):
+async def enhance_image_api(file: UploadFile = File(...), scale_factor: int = Form(...),  mode: str = Form(...), color_correct: bool = Form(False), sharpen: bool = Form(False)):
     logger.info(f"Received file: {file.filename}, content_type: {file.content_type}, scale_factor: {scale_factor}, mode: {mode}")
     
     try:
@@ -120,7 +182,7 @@ async def enhance_image_api(file: UploadFile = File(...), scale_factor: int = Fo
         img = process_image(content)
         
         future = asyncio.Future()
-        await app.state.queue.put({'img': img, 'scale_factor': scale_factor, 'mode': mode, 'future': future})
+        await app.state.queue.put({'img': img, 'scale_factor': scale_factor, 'mode': mode, 'color_correct': color_correct,'sharpen': sharpen,'future': future})
         output = await future
 
         output_img = Image.fromarray(output)
@@ -130,12 +192,70 @@ async def enhance_image_api(file: UploadFile = File(...), scale_factor: int = Fo
         original_image_base64 = base64.b64encode(buffered_original.getvalue()).decode()
         
         buffered_enhanced = io.BytesIO()
-        output_img.save(buffered_enhanced, format="JPEG", quality=95)
+        output_img.save(buffered_enhanced, format="JPEG", quality=100)
         enhanced_image_base64 = base64.b64encode(buffered_enhanced.getvalue()).decode()
         
         return JSONResponse({
             "original": original_image_base64,
             "enhanced": enhanced_image_base64
+        })
+    
+    except HTTPException as he:
+        logger.error(f"HTTP Exception: {str(he)}")
+        raise he
+    except Exception as e:
+        logger.error(f"Error processing image: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+
+# Function for generating chat responses
+def generate_response(prompt, max_length=250):
+    tokenizer, model = get_language_model()
+    device = next(model.parameters()).device
+    
+    inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=512)
+    input_ids = inputs.input_ids.to(device)
+    attention_mask = inputs.attention_mask.to(device)
+    
+    with torch.no_grad():
+        outputs = model.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_length=max_length,
+            num_return_sequences=1,
+            temperature=0.7,
+            do_sample=True
+        )
+    
+    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return response
+
+
+# Route for chat interactions
+@app.post("/chat/")
+async def chat(message: str = Form(...)):
+    try:
+        response = await asyncio.get_event_loop().run_in_executor(executor, generate_response, message)
+        return JSONResponse({"response": response})
+    except Exception as e:
+        logger.error(f"Error generating chat response: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error generating chat response: {str(e)}")
+
+# Route for image captioning
+@app.post("/caption/")
+async def caption_image(file: UploadFile = File(...)):
+    try:
+        content = await validate_image(file)
+        img = Image.open(io.BytesIO(content)).convert('RGB')
+        
+        caption = await asyncio.get_event_loop().run_in_executor(executor, generate_caption, img)
+        
+        buffered = io.BytesIO()
+        img.save(buffered, format="JPEG")
+        image_base64 = base64.b64encode(buffered.getvalue()).decode()
+        
+        return JSONResponse({
+            "image": image_base64,
+            "caption": caption
         })
     
     except HTTPException as he:

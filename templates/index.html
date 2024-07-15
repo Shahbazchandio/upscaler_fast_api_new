@@ -3,87 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Enhancer</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        h1 { text-align: center; }
-        form { margin-bottom: 20px; }
-        #imagePreview { max-width: 100%; margin-top: 20px; }
-        #result { display: none; margin-top: 20px; }
-        #result img { max-width: 48%; }
-    </style>
+    <title>Image Enhancer, Analyzer, and Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <h1>Image Enhancer</h1>
-    <form id="uploadForm" enctype="multipart/form-data">
-        <input type="file" id="imageInput" name="file" accept="image/*" required>
-        <select id="mode" name="mode" required>
-            <option value="upscale">Upscale (ESRGAN)</option>
-            <option value="face_enhance">Face Enhance (GFPGAN)</option>
-        </select>
-        <select id="scaleFactor" name="scale_factor" required>
-            <option value="2">2x</option>
-            <option value="3">3x</option>
-            <option value="4">4x</option>
-        </select>
-        <button type="submit">Process Image</button>
-    </form>
-    <img id="imagePreview" style="display: none;" alt="Image preview">
-    <div id="result">
-        <h2>Result</h2>
-        <div style="display: flex; justify-content: space-between;">
-            <div>
-                <h3>Original</h3>
-                <img id="originalImage" alt="Original image">
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold mb-8">Image Enhancer, Analyzer, and Chatbot</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Image Enhancement Section -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-semibold mb-4">Image Enhancement</h2>
+                <form id="enhance-form" enctype="multipart/form-data">
+                    <input type="file" name="file" accept="image/*" required class="mb-4">
+                    <div class="mb-4">
+                        <label class="mr-4">
+                            <input type="radio" name="mode" value="upscale" checked> Upscale (ESRGAN)
+                        </label>
+                        <label>
+                            <input type="radio" name="mode" value="face_enhance"> Face Enhance (GFPGAN)
+                        </label>
+                    </div>
+                    <div class="mb-4">
+                        <label class="mr-4">
+                            <input type="radio" name="scale_factor" value="2" checked> 2x
+                        </label>
+                        <label class="mr-4">
+                            <input type="radio" name="scale_factor" value="3"> 3x
+                        </label>
+                        <label>
+                            <input type="radio" name="scale_factor" value="4"> 4x
+                        </label>
+                    </div>
+                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">Process Image</button>
+                </form>
+                <div id="enhance-result" class="mt-8 hidden">
+                    <h3 class="text-xl font-semibold mb-4">Result</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="text-lg font-medium mb-2">Original</h4>
+                            <img id="original-image" class="w-full">
+                        </div>
+                        <div>
+                            <h4 class="text-lg font-medium mb-2">Processed</h4>
+                            <img id="processed-image" class="w-full">
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div>
-                <h3>Processed</h3>
-                <img id="processedImage" alt="Processed image">
+            
+            <!-- Image Analysis Section -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-semibold mb-4">Image Analysis</h2>
+                <form id="analyze-form" enctype="multipart/form-data">
+                    <input type="file" name="file" accept="image/*" required class="mb-4">
+                    <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded">Analyze Image</button>
+                </form>
+                <div id="analysis-result" class="mt-8 hidden">
+                    <h3 class="text-xl font-semibold mb-4">Analysis Result</h3>
+                    <img id="analyzed-image" class="w-full mb-4">
+                    <p id="image-title" class="text-lg font-bold"></p>
+                    <p id="image-caption" class="text-lg"></p>
+                    <p id="image-description" class="text-lg mt-2"></p>
+                    <div id="image-tags" class="mt-2"></div>
+                </div>
+            </div>
+            
+            <!-- Chatbot Section -->
+            <div class="bg-white p-6 rounded-lg shadow-md col-span-1 md:col-span-2">
+                <h2 class="text-2xl font-semibold mb-4">Chat</h2>
+                <div id="chat-messages" class="mb-4 h-64 overflow-y-auto border p-2"></div>
+                <form id="chat-form">
+                    <input type="text" id="chat-input" required class="w-full p-2 border mb-2">
+                    <button type="submit" class="bg-purple-500 text-white px-4 py-2 rounded">Send</button>
+                </form>
             </div>
         </div>
     </div>
-    <script>
-        const form = document.getElementById('uploadForm');
-        const imageInput = document.getElementById('imageInput');
-        const imagePreview = document.getElementById('imagePreview');
-        const result = document.getElementById('result');
-        const originalImage = document.getElementById('originalImage');
-        const processedImage = document.getElementById('processedImage');
 
-        imageInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    imagePreview.src = e.target.result;
-                    imagePreview.style.display = 'block';
-                }
-                reader.readAsDataURL(file);
-            }
+    <script>
+        // Image Enhancement
+        document.getElementById('enhance-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const response = await fetch('/enhance/', { method: 'POST', body: formData });
+            const data = await response.json();
+            document.getElementById('original-image').src = `data:image/jpeg;base64,${data.original}`;
+            document.getElementById('processed-image').src = `data:image/jpeg;base64,${data.enhanced}`;
+            document.getElementById('enhance-result').classList.remove('hidden');
         });
 
-        form.addEventListener('submit', async function(e) {
+        // Image Analysis
+        document.getElementById('analyze-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const formData = new FormData(form);
+            const formData = new FormData(e.target);
+            const response = await fetch('/analyze/', { method: 'POST', body: formData });
+            const data = await response.json();
+            document.getElementById('analyzed-image').src = `data:image/jpeg;base64,${data.image}`;
+            document.getElementById('image-title').textContent = data.analysis.title;
+            document.getElementById('image-caption').textContent = data.analysis.caption;
+            document.getElementById('image-description').textContent = data.analysis.description;
+            document.getElementById('image-tags').innerHTML = data.analysis.tags.map(tag => `<span class="inline-block bg-gray-200 rounded-full px-3 py-1 text-sm font-semibold text-gray-700 mr-2 mb-2">${tag}</span>`).join('');
+            document.getElementById('analysis-result').classList.remove('hidden');
+        });
+
+        // Chatbot
+        document.getElementById('chat-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('chat-input');
+            const message = input.value;
+            input.value = '';
             
-            try {
-                const response = await fetch('/enhance/', {
-                    method: 'POST',
-                    body: formData
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    originalImage.src = `data:image/jpeg;base64,${data.original}`;
-                    processedImage.src = `data:image/jpeg;base64,${data.enhanced}`;
-                    result.style.display = 'block';
-                } else {
-                    alert('Error processing image');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Error processing image');
-            }
+            const chatMessages = document.getElementById('chat-messages');
+            chatMessages.innerHTML += `<p><strong>You:</strong> ${message}</p>`;
+            
+            const response = await fetch('/chat/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `message=${encodeURIComponent(message)}`
+            });
+            const data = await response.json();
+            
+            chatMessages.innerHTML += `<p><strong>Bot:</strong> ${data.response}</p>`;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
         });
     </script>
 </body>
