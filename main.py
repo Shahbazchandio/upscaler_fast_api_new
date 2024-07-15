@@ -6,15 +6,12 @@ import logging
 from typing import List
 from functools import lru_cache
 
-
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 import numpy as np
-import cv2
-import torch
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from realesrgan import RealESRGANer
 
@@ -41,7 +38,6 @@ def get_models():
 
     return upsampler_2x, upsampler_4x
 
-# Remove the global model initialization
 MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 async def validate_image(file: UploadFile):
@@ -86,10 +82,7 @@ async def enhance_image(file: UploadFile = File(...), scale_factor: int = Form(.
         
         output, _ = await async_enhance(img, scale_factor)
 
-        if len(img.shape) == 3 and img.shape[2] == 4:
-            output_img = Image.fromarray(cv2.cvtColor(output, cv2.COLOR_BGRA2RGBA))
-        else:
-            output_img = Image.fromarray(cv2.cvtColor(output, cv2.COLOR_BGR2RGB))
+        output_img = Image.fromarray(output.astype(np.uint8))
 
         buffered = io.BytesIO()
         Image.open(io.BytesIO(content)).save(buffered, format="PNG")
