@@ -40,7 +40,7 @@ def get_models():
     upsampler_4x = RealESRGANer(scale=4, model_path=model_path_4x, model=model_4x, tile=256, tile_pad=10, pre_pad=0, half=False)
     upsampler_2x = RealESRGANer(scale=2, model_path=model_path_2x, model=model_2x, tile=256, tile_pad=10, pre_pad=0, half=False)
 
-    gfpgan_model_path = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth'
+    gfpgan_model_path = 'https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.4.pth'
     gfpgan = GFPGANer(model_path=gfpgan_model_path, upscale=1, arch='clean', channel_multiplier=2, bg_upsampler=None)
 
     return upsampler_2x, upsampler_4x, gfpgan
