@@ -85,11 +85,11 @@ async def enhance_image(file: UploadFile = File(...), scale_factor: int = Form(.
         output_img = Image.fromarray(output.astype(np.uint8))
 
         buffered = io.BytesIO()
-        Image.open(io.BytesIO(content)).save(buffered, format="PNG")
+        Image.open(io.BytesIO(content)).save(buffered, format="JPEG")
         original_image_base64 = base64.b64encode(buffered.getvalue()).decode()
         
         buffered = io.BytesIO()
-        output_img.save(buffered, format="PNG")
+        output_img.save(buffered, format="JPEG", quality=99)
         enhanced_image_base64 = base64.b64encode(buffered.getvalue()).decode()
         
         return JSONResponse({
