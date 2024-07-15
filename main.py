@@ -42,15 +42,14 @@ executor = ThreadPoolExecutor(max_workers=2)  # Adjust based on your CPU
 # Load the language model and tokenizer
 @lru_cache(maxsize=None)
 def get_language_model():
-    model_name = "google/flan-t5-large"
+    model_name = "microsoft/DialoGPT-medium"  # A more suitable model for chat
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     
     return tokenizer, model
-
 
 @lru_cache(maxsize=None)
 def get_models():
