@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 import cv2
 from transformers import GPTNeoForCausalLM, GPT2Tokenizer
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 # Imports for the chatbot feature
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -42,12 +43,17 @@ executor = ThreadPoolExecutor(max_workers=2)  # Adjust based on your CPU
 # Load the language model and tokenizer
 @lru_cache(maxsize=None)
 def get_language_model():
-    model_name = "microsoft/DialoGPT-medium"  # A more suitable model for chat
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name)
+    model_name = "openai-community/gpt2-large"
+    logger.info(f"Loading model: {model_name}")
+    tokenizer = GPT2Tokenizer.from_pretrained(model_name)
+    model = GPT2LMHeadModel.from_pretrained(model_name)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(f"Using device: {device}")
     model = model.to(device)
+    
+    # Add padding token to tokenizer
+    tokenizer.pad_token = tokenizer.eos_token
     
     return tokenizer, model
 
@@ -206,39 +212,57 @@ async def enhance_image_api(file: UploadFile = File(...), scale_factor: int = Fo
         logger.error(f"Error processing image: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
 
-# Function for generating chat responses
-def generate_response(prompt, max_length=250):
+def generate_response(prompt, max_length=100):
     tokenizer, model = get_language_model()
     device = next(model.parameters()).device
     
-    inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, max_length=512)
-    input_ids = inputs.input_ids.to(device)
-    attention_mask = inputs.attention_mask.to(device)
+    # Format the prompt
+    full_prompt = f"Human: {prompt}\nAI:"
+    logger.info(f"Full prompt: {full_prompt}")
+    
+    inputs = tokenizer.encode(full_prompt, return_tensors="pt").to(device)
+    logger.info(f"Encoded input shape: {inputs.shape}")
+    
+    attention_mask = torch.ones(inputs.shape, dtype=torch.long, device=device)
     
     with torch.no_grad():
         outputs = model.generate(
-            input_ids=input_ids,
+            inputs,
             attention_mask=attention_mask,
-            max_length=max_length,
+            max_length=inputs.shape[1] + max_length,
             num_return_sequences=1,
             temperature=0.7,
-            do_sample=True
+            top_k=50,
+            top_p=0.95,
+            do_sample=True,
+            pad_token_id=tokenizer.eos_token_id
         )
     
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    response = tokenizer.decode(outputs[0][inputs.shape[1]:], skip_special_tokens=True)
+    logger.info(f"Raw model response: {response}")
+    
+    # Basic post-processing
+    response = response.strip()
+    if len(response) < 2 or response.lower().startswith("human:"):
+        response = "I'm sorry, I don't have a good response for that. Could you please try asking something else?"
+    
+    logger.info(f"Final response: {response}")
     return response
 
-
-# Route for chat interactions
 @app.post("/chat/")
 async def chat(message: str = Form(...)):
     try:
-        response = await asyncio.get_event_loop().run_in_executor(executor, generate_response, message)
+        logger.info(f"Received message: {message}")
+        
+        response = await asyncio.get_event_loop().run_in_executor(
+            None, generate_response, message
+        )
+        
+        logger.info(f"Sending response: {response}")
         return JSONResponse({"response": response})
     except Exception as e:
         logger.error(f"Error generating chat response: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error generating chat response: {str(e)}")
-
 # Route for image captioning
 @app.post("/caption/")
 async def caption_image(file: UploadFile = File(...)):
