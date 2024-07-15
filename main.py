@@ -3,6 +3,7 @@ import base64
 import os
 import asyncio
 import logging
+import gc
 from typing import List
 from functools import lru_cache
 
@@ -68,8 +69,9 @@ async def async_enhance(img, scale_factor):
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
+
 @app.post("/enhance/")
-async def enhance_image(file: UploadFile = File(...), scale_factor: int = Form(...)):
+async def enhance_image(background_tasks: BackgroundTasks, file: UploadFile = File(...), scale_factor: int = Form(...)):
     if file.content_type not in ["image/jpeg", "image/png"]:
         raise HTTPException(status_code=400, detail="Only JPEG and PNG images are supported.")
     
@@ -84,13 +86,16 @@ async def enhance_image(file: UploadFile = File(...), scale_factor: int = Form(.
 
         output_img = Image.fromarray(output.astype(np.uint8))
 
-        buffered = io.BytesIO()
-        Image.open(io.BytesIO(content)).save(buffered, format="JPEG")
-        original_image_base64 = base64.b64encode(buffered.getvalue()).decode()
+        buffered_original = io.BytesIO()
+        Image.open(io.BytesIO(content)).save(buffered_original, format="JPEG")
+        original_image_base64 = base64.b64encode(buffered_original.getvalue()).decode()
         
-        buffered = io.BytesIO()
-        output_img.save(buffered, format="JPEG", quality=99)
-        enhanced_image_base64 = base64.b64encode(buffered.getvalue()).decode()
+        buffered_enhanced = io.BytesIO()
+        output_img.save(buffered_enhanced, format="JPEG", quality=95)
+        enhanced_image_base64 = base64.b64encode(buffered_enhanced.getvalue()).decode()
+        
+        # Schedule cleanup
+        background_tasks.add_task(cleanup, [img, output, output_img, buffered_original, buffered_enhanced])
         
         return JSONResponse({
             "original": original_image_base64,
@@ -100,6 +105,11 @@ async def enhance_image(file: UploadFile = File(...), scale_factor: int = Form(.
     except Exception as e:
         logger.error(f"Error processing image: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error processing image")
+
+def cleanup(objects_to_delete):
+    for obj in objects_to_delete:
+        del obj
+    gc.collect()
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
