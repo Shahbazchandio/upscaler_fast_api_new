@@ -3,55 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real-ESRGAN Image Enhancer</title>
+    <title>Image Enhancer</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
         h1 { text-align: center; }
-        #imageComparison { display: flex; justify-content: space-between; margin-top: 20px; }
-        #imageComparison img { max-width: 48%; height: auto; }
-        #loading { display: none; text-align: center; margin-top: 20px; }
+        form { margin-bottom: 20px; }
+        #imagePreview { max-width: 100%; margin-top: 20px; }
+        #result { display: none; margin-top: 20px; }
+        #result img { max-width: 48%; }
     </style>
 </head>
 <body>
-    <h1>Real-ESRGAN Image Enhancer</h1>
+    <h1>Image Enhancer</h1>
     <form id="uploadForm" enctype="multipart/form-data">
-        <input type="file" id="imageUpload" name="file" accept="image/png, image/jpeg" required>
+        <input type="file" id="imageInput" name="file" accept="image/*" required>
+        <select id="mode" name="mode" required>
+            <option value="upscale">Upscale (ESRGAN)</option>
+            <option value="face_enhance">Face Enhance (GFPGAN)</option>
+        </select>
         <select id="scaleFactor" name="scale_factor" required>
             <option value="2">2x</option>
             <option value="3">3x</option>
             <option value="4">4x</option>
         </select>
-        <button type="submit">Enhance Image</button>
+        <button type="submit">Process Image</button>
     </form>
-    <div id="loading">Enhancing image, please wait...</div>
-    <div id="imageComparison">
-        <img id="originalImage" alt="Original Image">
-        <img id="enhancedImage" alt="Enhanced Image">
+    <img id="imagePreview" style="display: none;" alt="Image preview">
+    <div id="result">
+        <h2>Result</h2>
+        <div style="display: flex; justify-content: space-between;">
+            <div>
+                <h3>Original</h3>
+                <img id="originalImage" alt="Original image">
+            </div>
+            <div>
+                <h3>Processed</h3>
+                <img id="processedImage" alt="Processed image">
+            </div>
+        </div>
     </div>
-
     <script>
-        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        const form = document.getElementById('uploadForm');
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const result = document.getElementById('result');
+        const originalImage = document.getElementById('originalImage');
+        const processedImage = document.getElementById('processedImage');
+
+        imageInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        form.addEventListener('submit', async function(e) {
             e.preventDefault();
-            const formData = new FormData(e.target);
-
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('imageComparison').style.display = 'none';
-
+            const formData = new FormData(form);
+            
             try {
                 const response = await fetch('/enhance/', {
                     method: 'POST',
                     body: formData
                 });
-                const result = await response.json();
                 
-                document.getElementById('originalImage').src = `data:image/png;base64,${result.original}`;
-                document.getElementById('enhancedImage').src = `data:image/png;base64,${result.enhanced}`;
-                
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('imageComparison').style.display = 'flex';
+                if (response.ok) {
+                    const data = await response.json();
+                    originalImage.src = `data:image/jpeg;base64,${data.original}`;
+                    processedImage.src = `data:image/jpeg;base64,${data.enhanced}`;
+                    result.style.display = 'block';
+                } else {
+                    alert('Error processing image');
+                }
             } catch (error) {
                 console.error('Error:', error);
-                document.getElementById('loading').textContent = 'An error occurred while processing the image.';
+                alert('Error processing image');
             }
         });
     </script>

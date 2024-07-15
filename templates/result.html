@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Enhancement Result</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; }
+        .image-container { display: flex; justify-content: space-between; margin-top: 20px; }
+        .image-container img { max-width: 48%; height: auto; }
+    </style>
+</head>
+<body>
+    <h1>Image Enhancement Result</h1>
+    <div class="image-container">
+        <div>
+            <h2>Original Image</h2>
+            <img src="data:image/jpeg;base64,{{ original_image }}" alt="Original Image">
+        </div>
+        <div>
+            <h2>Enhanced Image</h2>
+            <img src="data:image/jpeg;base64,{{ enhanced_image }}" alt="Enhanced Image">
+        </div>
+    </div>
+    <p><a href="/">Back to upload form</a></p>
+</body>
+</html>
