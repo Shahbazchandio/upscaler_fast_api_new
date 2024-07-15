@@ -70,6 +70,7 @@ async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+
 @app.post("/enhance/")
 async def enhance_image(background_tasks: BackgroundTasks, file: UploadFile = File(...), scale_factor: int = Form(...)):
     if file.content_type not in ["image/jpeg", "image/png"]:
