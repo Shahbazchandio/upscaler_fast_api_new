@@ -1,8 +1,13 @@
 import io
 import base64
-import os  # Add this line
+import os
+import asyncio
+import logging
+from typing import List
+from functools import lru_cache
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form
+
+from fastapi import FastAPI, File, UploadFile, HTTPException, Request, Form, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -13,20 +18,55 @@ import torch
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from realesrgan import RealESRGANer
 
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
 templates = Jinja2Templates(directory="templates")
 if os.path.exists("static"):
     app.mount("/static", StaticFiles(directory="static"), name="static")
-# Initialize Real-ESRGAN models
-model_4x = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
-model_2x = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
 
-model_path_4x = 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth'
-model_path_2x = 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth'
+@lru_cache(maxsize=None)
+def get_models():
+    model_4x = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
+    model_2x = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=2)
 
-upsampler_4x = RealESRGANer(scale=4, model_path=model_path_4x, model=model_4x, tile=0, tile_pad=10, pre_pad=0, half=False)
-upsampler_2x = RealESRGANer(scale=2, model_path=model_path_2x, model=model_2x, tile=0, tile_pad=10, pre_pad=0, half=False)
+    model_path_4x = 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth'
+    model_path_2x = 'https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth'
+
+    upsampler_4x = RealESRGANer(scale=4, model_path=model_path_4x, model=model_4x, tile=256, tile_pad=10, pre_pad=0, half=False)
+    upsampler_2x = RealESRGANer(scale=2, model_path=model_path_2x, model=model_2x, tile=256, tile_pad=10, pre_pad=0, half=False)
+
+    return upsampler_2x, upsampler_4x
+
+# Remove the global model initialization
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+async def validate_image(file: UploadFile):
+    content = await file.read()
+    size = len(content)
+    if size > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail=f"Image size should not exceed {MAX_IMAGE_SIZE/1024/1024} MB")
+    return content
+
+def process_image(content: bytes):
+    image = Image.open(io.BytesIO(content))
+    max_dimension = 1024
+    if max(image.size) > max_dimension:
+        image.thumbnail((max_dimension, max_dimension))
+    return np.array(image)
+
+async def async_enhance(img, scale_factor):
+    upsampler_2x, upsampler_4x = get_models()
+    loop = asyncio.get_event_loop()
+    if scale_factor == 2:
+        return await loop.run_in_executor(None, upsampler_2x.enhance, img, 2)
+    elif scale_factor == 3:
+        return await loop.run_in_executor(None, upsampler_4x.enhance, img, 3)
+    else:  # scale_factor == 4
+        return await loop.run_in_executor(None, upsampler_4x.enhance, img, 4)
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -41,27 +81,18 @@ async def enhance_image(file: UploadFile = File(...), scale_factor: int = Form(.
         raise HTTPException(status_code=400, detail="Scale factor must be 2, 3, or 4.")
     
     try:
-        image_data = await file.read()
-        img = cv2.imdecode(np.frombuffer(image_data, np.uint8), cv2.IMREAD_UNCHANGED)
+        content = await validate_image(file)
+        img = process_image(content)
+        
+        output, _ = await async_enhance(img, scale_factor)
+
         if len(img.shape) == 3 and img.shape[2] == 4:
-            img_mode = 'RGBA'
-        else:
-            img_mode = None
-
-        if scale_factor == 2:
-            output, _ = upsampler_2x.enhance(img, outscale=2)
-        elif scale_factor == 3:
-            output, _ = upsampler_4x.enhance(img, outscale=3)
-        else:  # scale_factor == 4
-            output, _ = upsampler_4x.enhance(img, outscale=4)
-
-        if img_mode == 'RGBA':
             output_img = Image.fromarray(cv2.cvtColor(output, cv2.COLOR_BGRA2RGBA))
         else:
             output_img = Image.fromarray(cv2.cvtColor(output, cv2.COLOR_BGR2RGB))
 
         buffered = io.BytesIO()
-        Image.open(io.BytesIO(image_data)).save(buffered, format="PNG")
+        Image.open(io.BytesIO(content)).save(buffered, format="PNG")
         original_image_base64 = base64.b64encode(buffered.getvalue()).decode()
         
         buffered = io.BytesIO()
@@ -74,7 +105,16 @@ async def enhance_image(file: UploadFile = File(...), scale_factor: int = Form(.
         })
     
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An error occurred while processing the image: {str(e)}")
+        logger.error(f"Error processing image: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error processing image")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"message": "An unexpected error occurred. Please try again later."},
+    )
 
 if __name__ == "__main__":
     import uvicorn
