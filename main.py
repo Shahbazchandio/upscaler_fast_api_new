@@ -50,6 +50,7 @@ def get_language_model():
     logger.info(f"Using device: {device}")
     model = model.to(device)
     
+    
     # Add padding token to tokenizer
     tokenizer.pad_token = tokenizer.eos_token
     
