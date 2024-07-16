@@ -16,6 +16,7 @@ from realesrgan import RealESRGANer
 from gfpgan import GFPGANer
 from concurrent.futures import ThreadPoolExecutor
 import cv2
+from transformers import GPT2Tokenizer, TFGPT2Model
 
 # Imports for the chatbot feature
 from transformers import AutoModelForCausalLM, AutoTokenizer
